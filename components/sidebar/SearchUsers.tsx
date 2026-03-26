@@ -2,81 +2,70 @@
 
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
-import { useUser } from "@clerk/nextjs";
 import { api } from "@/convex/_generated/api";
-import { useRouter } from "next/navigation";
+import { useUser } from "@clerk/nextjs";
+import { Id } from "@/convex/_generated/dataModel";
 
-export default function SearchUsers() {
-
+export default function SearchUsers({
+  onSelectConversation,
+}: {
+  onSelectConversation: (id: Id<"conversations">) => void;
+}) {
   const { user } = useUser();
-  const router = useRouter();
 
   const users = useQuery(api.users.getUsers);
 
-  const createConversation =
-    useMutation(api.conversations.createConversation);
+  // ✅ get current convex user
+  const currentUser = useQuery(
+    api.users.getUserByClerkId,
+    user ? { clerkId: user.id } : "skip"
+  );
+
+  const getOrCreateConversation = useMutation(
+    api.conversations.getOrCreateConversation
+  );
 
   const [search, setSearch] = useState("");
 
-  if (!users || !user) return null;
+  if (!users || !currentUser) {
+    return <div className="p-4">Loading...</div>;
+  }
 
-  const filtered = users.filter((u) =>
-    u.clerkId !== user.id &&
-    (u.name?.toLowerCase().includes(search.toLowerCase()) ||
-      u.email?.toLowerCase().includes(search.toLowerCase()))
+  const filteredUsers = users.filter((u) =>
+    u.name?.toLowerCase().includes(search.toLowerCase())
   );
 
-  const startChat = async (otherId: string) => {
-
-    const id = await createConversation({
-      user1: user.id,
-      user2: otherId,
+  const handleClick = async (otherUserId: Id<"users">) => {
+    const conversationId = await getOrCreateConversation({
+      user1: currentUser._id,
+      user2: otherUserId,
     });
 
-    router.push(`/chat/${id}`);
+    onSelectConversation(conversationId);
   };
 
   return (
-    <div className="p-3 border-b">
+    <div className="p-4">
 
       <input
-        type="text"
+        className="w-full border p-2 mb-4 rounded"
         placeholder="Search users..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        className="w-full border rounded-lg px-3 py-2 text-sm"
       />
 
-      {search && (
-        <div className="mt-2 bg-white shadow rounded">
+      <div className="space-y-2">
+        {filteredUsers.map((u) => (
+          <div
+            key={u._id}
+            onClick={() => handleClick(u._id)}
+            className="p-2 border rounded cursor-pointer hover:bg-gray-100"
+          >
+            {u.name}
+          </div>
+        ))}
+      </div>
 
-          {filtered.length === 0 && (
-            <div className="p-2 text-sm text-gray-400">
-              No users found
-            </div>
-          )}
-
-          {filtered.map((u) => (
-            <button
-              key={u._id}
-              onClick={() => startChat(u.clerkId)}
-              className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2"
-            >
-              <img
-                src={u.image || "/avatar.png"}
-                className="w-8 h-8 rounded-full"
-              />
-
-              <div>
-                <div className="text-sm font-medium">
-                  {u.name || u.email}
-                </div>
-              </div>
-            </button>
-          ))}
-
-        </div>
-      )}
     </div>
   );
 }
